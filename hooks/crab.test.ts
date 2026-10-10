@@ -85,6 +85,13 @@ test('it dies after a week unfed and cannot be fed back', () => {
   expect(feed(crab, 1_000_000, later)).toEqual(crab)
 })
 
+test('feeding marks a shrimp due, saved with the crab', () => {
+  expect(hatch(T0).hasShrimp).toBe(undefined)
+  expect(feed(hatch(T0), 5_000, T0 + 1000).hasShrimp).toBe(true)
+  const dead = hatch(T0)
+  expect(feed(dead, 5_000, T0 + DIES_AFTER_MS + HOUR).hasShrimp).toBe(undefined)
+})
+
 test('a shrimp lands on the beach away from the crab, one at a time', () => {
   const rand = seeded(3)
   for (let i = 0; i < 200; i++) {

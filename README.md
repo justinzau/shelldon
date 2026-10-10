@@ -1,4 +1,4 @@
-# claudepets
+# shelldon
 
 A 🦀 that lives in your Claude Code status line.
 
@@ -14,7 +14,7 @@ A 🦀 that lives in your Claude Code status line.
 ## Install
 
 ```
-/plugin install crab-pet --marketplace <owner>/claudepets
+/plugin install crab-pet --marketplace justinzau/shelldon
 ```
 
 Answer `y` to add the marketplace, then pick a scope.
@@ -33,17 +33,41 @@ command, and have Claude Code re-run that command every second:
 }
 ```
 
+Add this to the end of your status line script. It starts no processes: the
+session id is cut out with parameter expansion, and the frame is read with
+the shell's own `read` (no `jq`, no `cat`).
+
 ```sh
-input=$(cat)
-# ... your own status line ...
-session_id=$(printf '%s' "$input" | jq -r --binary '.session_id // empty')
-crab_frame="$HOME/.claude/crab-pet/frames/${session_id}.txt"
-[ -n "$session_id" ] && [ -s "$crab_frame" ] && cat "$crab_frame" && printf '\n'
+# input holds the JSON Claude Code sent on stdin, e.g. read with:
+#   IFS= read -r -d '' input        (bash; fork-free, unlike input=$(cat))
+case $input in
+  *'"session_id"'*)
+    rest=${input#*'"session_id"'}; rest=${rest#*'"'}; session_id=${rest%%'"'*}
+    crab_frame="$HOME/.claude/crab-pet/frames/${session_id}.txt"
+    if [ -n "$session_id" ] && [ -s "$crab_frame" ]; then
+      IFS= read -r crab < "$crab_frame" || [ -n "$crab" ]
+      printf '%s\n' "$crab"
+    fi ;;
+esac
 ```
 
-Keep the command under a second: Claude Code cancels a run still going when
-the next refresh fires. On Windows (Git Bash) each extra process costs about
-100ms, so do as much as you can in a single `jq` call.
+## Performance
+
+- **No tokens.** The plugin never calls the model; it reads the token counts
+  Claude Code already reports at the end of each turn.
+- **No background processes.** One timer inside Claude Code ticks once a
+  second, and writes the frame file only when the scene changed.
+- **It dozes.** After 10 minutes without a turn the scene stops moving and
+  redraws once a minute. The next turn wakes it.
+- **The status line command is the real cost**, since `refreshInterval: 1`
+  runs it every second. Keep it fast: every process it starts (a pipe,
+  `$(...)`, `cat`, each `jq`) costs about 1ms on macOS and Linux but about
+  70ms under Git Bash on Windows. Do your own fields in one `jq` call, feed
+  it with a here-string (`jq ... <<< "$input"`) rather than a pipe, and use
+  the snippet above for the crab. Claude Code cancels a run still going when
+  the next refresh fires, so a slow script shows no crab at all.
+- Want it lighter still? `refreshInterval: 2` halves the cost; the crab
+  moves in two-second hops.
 
 ## Commands
 

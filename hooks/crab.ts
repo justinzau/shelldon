@@ -11,6 +11,11 @@ export type Crab = {
   bornAt: number
   /** How many tokens the last meal was, for the `+12.4k` flash. */
   lastMeal: number
+  /**
+   * A 🍤 is waiting on the beach, uneaten. Kept with the crab rather than in
+   * memory, so a plugin reload never sweeps it away.
+   */
+  hasShrimp?: boolean
 }
 
 export type Mood = 'happy' | 'okay' | 'hungry' | 'starving' | 'dead'
@@ -39,9 +44,9 @@ export const DECAY_PER_HOUR = 100 / 72
 export const DIES_AFTER_MS = 7 * DAY
 const FLASH_MS = 5_000
 /** Share of the scene that is ocean. */
-const OCEAN_SHARE = 0.3
+const OCEAN_SHARE = 0.18
 const MIN_BEACH_CELLS = 4
-const STATS_ROOM = 30
+const STATS_ROOM = 26
 
 export function hatch(now: number): Crab {
   return { food: 80, fedAt: now, bornAt: now, lastMeal: 0 }
@@ -74,6 +79,7 @@ export function feed(crab: Crab, tokens: number, now: number): Crab {
     food: Math.min(100, foodNow(crab, now) + meal),
     fedAt: now,
     lastMeal: tokens,
+    hasShrimp: true,
   }
 }
 
@@ -217,14 +223,17 @@ function stats(crab: Crab | undefined, now: number, walk: Walk): string {
   return `🍖 ${Math.round(foodNow(crab, now))}% ${tag}${flash}`
 }
 
+/** Ocean columns for `width`: a fixed share of the row. */
+function oceanCols(width: number): number {
+  return Math.max(2, Math.floor(width * OCEAN_SHARE))
+}
+
 /**
- * Beach cells (two columns each, as wide as 🦀) for `width`. Sized against a
- * fixed room for the stats, so the beach holds still as they change; the
- * ocean takes up the slack.
+ * Beach cells (two columns each, as wide as 🦀) for `width`: what the ocean
+ * and a fixed room for the stats leave, so the beach holds still as they change.
  */
 export function beachCells(width: number): number {
-  const room = width - STATS_ROOM
-  return Math.max(MIN_BEACH_CELLS, Math.floor((room * (1 - OCEAN_SHARE)) / 2))
+  return Math.max(MIN_BEACH_CELLS, Math.floor((width - oceanCols(width) - STATS_ROOM) / 2))
 }
 
 /** The whole row: ocean, beach with the crab, then its stats, `width` wide. */
@@ -252,10 +261,14 @@ export function scene(
     else beach.push({ text: ' ·', color: SAND_YELLOW })
   }
 
+  // Stats shorter than their room leave blanks at the end; longer ones (the
+  // tombstone's) take columns from the ocean.
+  const sea = oceanCols(width)
+  const slack = width - sea - cells * 2 - 1 - displayWidth(tail)
   return [
-    ...ocean(width - cells * 2 - displayWidth(tail) - 1, tick),
+    ...ocean(sea + Math.min(0, slack), tick),
     ...beach,
-    { text: ` ${tail}` },
+    { text: ` ${tail}${' '.repeat(Math.max(0, slack))}` },
   ]
 }
 
