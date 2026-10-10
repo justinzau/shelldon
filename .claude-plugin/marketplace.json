@@ -1,0 +1,6 @@
+{
+  "name": "claudepets",
+  "owner": { "name": "Justin Zau" },
+  "description": "Pets that live in your Claude Code terminal",
+  "plugins": [{ "name": "crab-pet", "source": "./" }]
+}
