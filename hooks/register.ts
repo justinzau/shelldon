@@ -13,6 +13,8 @@ import {
   wander,
 } from './crab'
 import type { Crab, Walk } from './crab'
+import { isShelldonCommand, printsCrab, scriptPathsIn, wrapStatusLine } from './setup'
+import type { StatusLine } from './setup'
 
 /** One tick a second: the status line re-reads the frame once a second. */
 const FRAME_MS = 1000
@@ -29,6 +31,11 @@ const STALE_FRAME_MS = 60 * 60 * 1000
 
 // Module state is rebuilt on every load; the crab itself lives in $.store.
 let key = ''
+let home = ''
+/** ~/.claude/shelldon: frames, the status line script, what setup replaced. */
+let shelldonDir = ''
+/** The user settings.json setup edits (CLAUDE_CONFIG_DIR, else ~/.claude). */
+let settingsPath = ''
 let framesDir = ''
 let framePath = ''
 let isWindows = false
@@ -107,25 +114,151 @@ function wake() {
   quietTicks = 0
 }
 
+/**
+ * Copies the plugin's status line script to ~/.claude/shelldon, where the
+ * settings point (the plugin's own folder moves with every update). CRs are
+ * dropped: sh chokes on a CRLF checkout.
+ */
+async function installScript($: EngineInterface) {
+  const text = (await $.fs.read(`${$.plugin.root}/statusline/shelldon.sh`)).replace(/\r/g, '')
+  const target = `${shelldonDir}/statusline.sh`
+  if ((await $.fs.exists(target)) && (await $.fs.read(target)) === text) return
+  await $.fs.write(target, text)
+}
+
+/**
+ * Whether the status line already prints the crab: it is Shelldon's own, or
+ * a script it runs reads the frames (a hand-made one, as the README shows).
+ */
+async function crabInStatusLine($: EngineInterface): Promise<boolean> {
+  const line = (await $.settings.read()).statusLine as StatusLine | undefined
+  if (line?.command === undefined) return false
+  if (isShelldonCommand(line.command)) return true
+  for (const path of scriptPathsIn(line.command, home, isWindows)) {
+    try {
+      if ((await $.fs.stat(path)).kind === 'file' && printsCrab(await $.fs.read(path))) return true
+    } catch {
+      // Not a file this process can read: not the script.
+    }
+  }
+  return false
+}
+
+/** The user settings.json, parsed; undefined when it exists but is not JSON. */
+async function readUserSettings($: EngineInterface): Promise<Record<string, unknown> | undefined> {
+  if (!(await $.fs.exists(settingsPath))) return {}
+  try {
+    const parsed: unknown = JSON.parse(await $.fs.read(settingsPath))
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Names the settings sources above the user's that set their own status line. */
+async function overridingSources($: EngineInterface): Promise<string[]> {
+  const found: string[] = []
+  for (const source of ['project', 'local', 'flag', 'policy'] as const) {
+    if ((await $.settings.read({ source })).statusLine !== undefined) found.push(source)
+  }
+  return found
+}
+
+/**
+ * `/crab setup`: points the status line at Shelldon's script, which runs the
+ * previous command first, so nothing the person had is lost. What it replaced
+ * is kept beside the script for `/crab setup undo`.
+ */
+async function setup($: EngineInterface): Promise<string> {
+  if (await crabInStatusLine($)) return 'Your crab is already in your status line. 🦀'
+  const settings = await readUserSettings($)
+  if (settings === undefined) {
+    return `${settingsPath} isn't valid JSON, so I left it alone. Fix it and run /crab setup again.`
+  }
+  const previous = settings.statusLine as StatusLine | undefined
+  const overrides = await overridingSources($)
+  const overrideNote =
+    overrides.length > 0
+      ? `\nNote: your ${overrides.join(' and ')} settings set their own status line, which wins over yours here. Remove it there to see the crab.`
+      : ''
+  if (isShelldonCommand(previous?.command)) {
+    return `Shelldon's status line is already in your user settings.${overrideNote}`
+  }
+
+  const { statusLine, previousCommand } = wrapStatusLine(previous)
+  await installScript($)
+  await $.fs.write(`${shelldonDir}/previous-statusline.json`, `${JSON.stringify(previous ?? null)}\n`)
+  if (previousCommand !== undefined) {
+    await $.fs.write(`${shelldonDir}/previous-command`, `${previousCommand}\n`)
+  } else {
+    await deleteFiles($, [`${shelldonDir}/previous-command`])
+  }
+  await $.fs.write(settingsPath, `${JSON.stringify({ ...settings, statusLine }, null, 2)}\n`)
+
+  const kept = previousCommand !== undefined ? ' Your old status line stays on top; the crab goes under it.' : ''
+  return `🦀 Done! Your crab is in your status line.${kept}\nUndo any time with /crab setup undo.${overrideNote}`
+}
+
+/** `/crab setup undo`: puts back the status line setup replaced. */
+async function undoSetup($: EngineInterface): Promise<string> {
+  const savedPath = `${shelldonDir}/previous-statusline.json`
+  if (!(await $.fs.exists(savedPath))) return "Setup hasn't been run, so there's nothing to undo."
+  const settings = await readUserSettings($)
+  if (settings === undefined) {
+    return `${settingsPath} isn't valid JSON, so I left it alone. Fix it and run /crab setup undo again.`
+  }
+  const current = settings.statusLine as StatusLine | undefined
+  const files = [savedPath, `${shelldonDir}/previous-command`, `${shelldonDir}/statusline.sh`]
+  if (!isShelldonCommand(current?.command)) {
+    await deleteFiles($, files)
+    return 'Your status line was changed after setup, so I left it as it is.'
+  }
+
+  const previous = JSON.parse(await $.fs.read(savedPath)) as StatusLine | null
+  const { statusLine: _, ...rest } = settings
+  await $.fs.write(
+    settingsPath,
+    `${JSON.stringify(previous === null ? rest : { ...rest, statusLine: previous }, null, 2)}\n`,
+  )
+  await deleteFiles($, files)
+  return previous === null
+    ? 'Removed the crab from your status line.'
+    : 'Put your previous status line back.'
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     key = `crab:${(await $.session.cwd()).toLowerCase()}`
     const userProfile = await $.env.get('USERPROFILE')
     isWindows = userProfile !== undefined
-    const home = userProfile ?? (await $.env.get('HOME')) ?? ''
-    framesDir = `${home}/.claude/shelldon/frames`
+    home = userProfile ?? (await $.env.get('HOME')) ?? ''
+    shelldonDir = `${home}/.claude/shelldon`
+    settingsPath = `${(await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${home}/.claude`}/settings.json`
+    framesDir = `${shelldonDir}/frames`
     framePath = `${framesDir}/${await $.session.id()}.txt`
     await sweepFrames($)
     await load($)
     if (crab === undefined) await save($, hatch(await $.clock.now()))
     await $.command.register({
       name: 'crab',
-      description: 'Check on your crab, or hatch a new one',
-      argumentHint: '[hatch]',
+      description: 'Check on your crab, put it in your status line, or hatch a new one',
+      argumentHint: '[setup | setup undo | hatch]',
       immediate: true,
     })
     await draw($)
     $.clock.every(FRAME_MS, () => void draw($))
+
+    // A plugin update ships a new script: keep the installed copy current.
+    if (await $.fs.exists(`${shelldonDir}/statusline.sh`)) await installScript($)
+    // Once ever: say how to see the crab, unless the status line shows it.
+    if ((await $.store.get('setupHintShown')) !== true && !(await crabInStatusLine($))) {
+      $.ui.toast('🦀 Your crab hatched! Run /crab setup to see it in your status line.', {
+        timeoutMs: 15_000,
+      })
+      await $.store.set('setupHintShown', true)
+    }
 
     return next(e)
   })
@@ -170,9 +303,13 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'crab' }, async ($, e) => {
+    const args = e.args.trim().split(/\s+/).join(' ')
+    if (args === 'setup') return { text: await setup($) }
+    if (args === 'setup undo') return { text: await undoSetup($) }
+
     const now = await $.clock.now()
     await load($)
-    if (e.args.trim() === 'hatch') {
+    if (args === 'hatch') {
       if (crab !== undefined && moodOf(crab, now) !== 'dead') {
         return { text: 'Your crab is still alive. Take care of it!' }
       }
@@ -183,6 +320,9 @@ export const register: Register = on => {
       return { text: '🥚 → 🦀 A new crab hatched! Keep working in this repo to feed it.' }
     }
 
-    return { text: report(crab, now) }
+    const hint = (await crabInStatusLine($))
+      ? ''
+      : '\nRun /crab setup to see it in your status line.'
+    return { text: `${report(crab, now)}${hint}` }
   })
 }

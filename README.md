@@ -17,25 +17,30 @@ A 🦀 that lives in your Claude Code status line.
 /plugin install shelldon --marketplace justinzau/shelldon
 ```
 
-Answer `y` to add the marketplace, then pick a scope.
+Answer `y` to add the marketplace, then pick a scope. Then put the crab in
+your status line:
 
-## Show it in your status line
-
-The plugin writes each frame, ANSI-colored, to
-`~/.claude/shelldon/frames/<session_id>.txt`. Print it from your status line
-command, and have Claude Code re-run that command every second:
-
-```json
-"statusLine": {
-  "type": "command",
-  "command": "sh ~/.claude/statusline-command.sh",
-  "refreshInterval": 1
-}
+```
+/crab setup
 ```
 
-Add this to the end of your status line script. It starts no processes: the
-session id is cut out with parameter expansion, and the frame is read with
-the shell's own `read` (no `jq`, no `cat`).
+That's it. If you already have a status line, it stays exactly as it was,
+with the crab on a line under it. `/crab setup undo` puts everything back.
+
+What setup does: it copies a small script to `~/.claude/shelldon/statusline.sh`
+and points `statusLine` in `~/.claude/settings.json` at it, refreshed every
+second. Your previous status line command, if any, is saved beside the script,
+and the script runs it first.
+
+## Or wire it into your own script
+
+The plugin writes each frame, ANSI-colored, to
+`~/.claude/shelldon/frames/<session_id>.txt`. To print it from a status line
+script of your own instead, set `"refreshInterval": 1` on your `statusLine`
+and add this to the end of the script. It starts no processes: the session id
+is cut out with parameter expansion, and the frame is read with the shell's
+own `read` (no `jq`, no `cat`). `/crab setup` notices a script that does this
+and leaves it alone.
 
 ```sh
 # input holds the JSON Claude Code sent on stdin, e.g. read with:
@@ -62,16 +67,19 @@ esac
 - **The status line command is the real cost**, since `refreshInterval: 1`
   runs it every second. Keep it fast: every process it starts (a pipe,
   `$(...)`, `cat`, each `jq`) costs about 1ms on macOS and Linux but about
-  70ms under Git Bash on Windows. Do your own fields in one `jq` call, feed
-  it with a here-string (`jq ... <<< "$input"`) rather than a pipe, and use
-  the snippet above for the crab. Claude Code cancels a run still going when
-  the next refresh fires, so a slow script shows no crab at all.
+  70ms under Git Bash on Windows. Setup's script starts none of its own; a
+  status line it wraps costs whatever that command costs. In a script of your
+  own, do your fields in one `jq` call, feed it with a here-string
+  (`jq ... <<< "$input"`) rather than a pipe, and use the snippet above for
+  the crab. Claude Code cancels a run still going when the next refresh
+  fires, so a slow script shows no crab at all.
 - Want it lighter still? `refreshInterval: 2` halves the cost; the crab
   moves in two-second hops.
 
 ## Commands
 
 - `/crab` shows its mood, age and how long until it starves.
+- `/crab setup` puts the crab in your status line; `/crab setup undo` takes it out.
 - `/crab hatch` hatches a new crab once the old one has died.
 
 ## Develop
