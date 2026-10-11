@@ -2,9 +2,7 @@
 
 A 🦀 that lives in your Claude Code status line.
 
-```
-~≈~~≈~ ~≈≈~ ~~≈~ ≈~~ ~≈~🌊 · · · 🦀 · · · · · · · · 🍤 · · · · · 🍖 81% happy +12.4k
-```
+<img src="docs/preview.gif" alt="Shelldon in a Claude Code status line: a crab wanders a yellow beach beside a rolling blue ocean, a shrimp lands after a turn, and the crab walks over and eats it" width="832">
 
 - It wanders a beach beside a rolling ocean.
 - Every Claude turn feeds it the tokens it spent and drops a 🍤 on the beach; the crab walks up beside it and eats it.
@@ -91,3 +89,14 @@ claude plugin test .
 ```
 
 Tune the crab in `hooks/crab.ts` (food, decay, speeds, colors) and `hooks/register.ts` (frame rate).
+
+The preview GIF is drawn from the real crab logic: `docs/preview/frames.mjs`
+plays a short story through `hooks/crab.ts` (Node 23.6+ runs the TypeScript
+directly), and `docs/preview/render.py` paints it with Pillow. The fonts are
+Windows' Cascadia Mono and Segoe UI Emoji; point `render.py` elsewhere on
+other systems.
+
+```
+node docs/preview/frames.mjs . frames.json
+python docs/preview/render.py frames.json docs/preview.gif
+```
