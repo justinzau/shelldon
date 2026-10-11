@@ -13,7 +13,7 @@ const DIR = `${HOME}/.claude/shelldon`
  * deletes through `$.process.run`, so setup runs without touching the disk.
  */
 function world(on: On, files: Map<string, string>, sources: Record<string, object> = {}) {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.store(on, { setupHintShown: true })
   mock.env(on, { USERPROFILE: HOME })
   const slash = (path: string) => path.replace(/\\/g, '/')
@@ -48,16 +48,24 @@ function world(on: On, files: Map<string, string>, sources: Record<string, objec
     files.set(slash(e.path), e.text)
     return { value: undefined }
   })
+  // `del /q /f <files>` and `rmdir /s /q <dir>`: the paths start at argv[5].
+  const ran: string[][] = []
   on('process.run', ($, e) => {
-    for (const path of e.argv.slice(5)) files.delete(path.replace(/\\/g, '/'))
-    const ran = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
-    return { value: ran }
+    ran.push([...e.argv])
+    for (const path of e.argv.slice(5).map(slash)) {
+      for (const key of [...files.keys()]) {
+        if (key === path || key.startsWith(`${path}/`)) files.delete(key)
+      }
+    }
+    const done = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+    return { value: done }
   })
   on('settings.read', ($, e) => {
     if (e.source === 'user') return { value: userSettings() }
     if (e.source !== undefined) return { value: sources[e.source] ?? {} }
     return { value: Object.assign({}, userSettings(), ...Object.values(sources)) }
   })
+  return { ran, clock }
 }
 
 async function start($: Engine) {
@@ -134,6 +142,37 @@ test('setup says when project settings hide the user status line', async ($, on)
   world(on, files, { project: { statusLine: { type: 'command', command: 'echo project' } } })
   await start($)
   expect(await crab($, 'setup')).toContain('your project settings set their own status line')
+})
+
+test('uninstall clears the frame and setup, removes the folder, then uninstalls the plugin', async ($, on) => {
+  const files = new Map([[SETTINGS, JSON.stringify({ statusLine: { type: 'command', command: 'sh ~/mine.sh' } })]])
+  const commands: string[] = []
+  const { ran, clock } = world(on, files)
+  on('command.run', { command: 'plugin' }, ($, e) => {
+    commands.push(`/plugin ${e.args}`)
+    return { text: 'uninstalled' }
+  })
+  await start($)
+  await crab($, 'setup')
+  expect(files.has(`${DIR}/frames/sid.txt`)).toBe(true)
+
+  const said = await crab($, 'uninstall')
+  expect(said).toContain('Put your previous status line back')
+  expect(said).toContain('left the status line')
+  expect(files.has(`${DIR}/frames/sid.txt`)).toBe(false)
+  expect(userSettings(files).statusLine).toEqual({ type: 'command', command: 'sh ~/mine.sh' })
+  expect(ran.some(argv => argv.includes('rmdir') && argv.some(a => a.endsWith('.claude\\shelldon')))).toBe(true)
+  expect(commands).toEqual([])
+  await clock.advance(1000)
+  expect(commands).toEqual(['/plugin uninstall shelldon@shelldon'])
+})
+
+test('an unknown /crab subcommand says so instead of showing the crab', async ($, on) => {
+  world(on, new Map([[SETTINGS, '{}']]))
+  await start($)
+  const said = await crab($, 'unistall')
+  expect(said).toContain('Unknown: /crab unistall')
+  expect(said).not.toContain('food')
 })
 
 test('wrapStatusLine keeps a command to run first, and only a real one', () => {

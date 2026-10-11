@@ -1,6 +1,6 @@
 {
   "name": "shelldon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A 🦀 that wanders a beach in your status line. Feed it tokens by working in the repo, or it starves.",
   "author": { "name": "Justin Zau" }
 }

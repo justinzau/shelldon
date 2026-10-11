@@ -79,6 +79,31 @@ esac
 - `/crab` shows its mood, age and how long until it starves.
 - `/crab setup` puts the crab in your status line; `/crab setup undo` takes it out.
 - `/crab hatch` hatches a new crab once the old one has died.
+- `/crab uninstall` cleans up and uninstalls Shelldon.
+
+## Uninstall
+
+```
+/crab uninstall
+```
+
+It takes the crab off your status line right away, undoes `/crab setup`
+(your previous status line comes back), removes `~/.claude/shelldon/`, and
+then uninstalls the plugin. If Shelldon still shows in `/plugin` afterwards,
+finish with `/plugin uninstall shelldon@shelldon`. Optionally remove the
+marketplace too: `/plugin marketplace remove shelldon`.
+
+Use `/crab uninstall` rather than `/plugin uninstall` alone: Claude Code
+doesn't tell a plugin it's being uninstalled, so on its own the last frame
+stays on your status line until you delete `~/.claude/shelldon/frames/`.
+
+Kept on purpose: `~/.claude/plugins/store/shelldon_*.json` holds your crabs,
+so they come back if you reinstall. Delete it to forget them.
+
+If you wired the crab into a status line script of your own, take out its
+snippet and `"refreshInterval": 1` yourself. They're harmless without the
+plugin (no frames, no crab line), but dropping `refreshInterval` stops the
+script running every second.
 
 ## Develop
 

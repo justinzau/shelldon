@@ -26,6 +26,8 @@ const IDLE_TICKS = 10 * 60
 const IDLE_REDRAW_TICKS = 60
 /** Columns left free at the row's end, so it never wraps. */
 const MARGIN = 2
+/** How long after `/crab uninstall` answers the plugin asks to be uninstalled. */
+const UNINSTALL_DELAY_MS = 500
 /** A frame untouched this long belongs to a session that died without cleaning up. */
 const STALE_FRAME_MS = 60 * 60 * 1000
 
@@ -64,6 +66,14 @@ async function deleteFiles($: EngineInterface, paths: readonly string[]) {
   const argv = isWindows
     ? ['cmd', '/c', 'del', '/q', '/f', ...paths.map(p => p.replace(/\//g, '\\'))]
     : ['rm', '-f', ...paths]
+  await $.process.run(argv, { timeoutMs: 5000 }).catch(() => undefined)
+}
+
+/** Deletes a directory and everything in it, the same way. */
+async function deleteDir($: EngineInterface, path: string) {
+  const argv = isWindows
+    ? ['cmd', '/c', 'rmdir', '/s', '/q', path.replace(/\//g, '\\')]
+    : ['rm', '-rf', path]
   await $.process.run(argv, { timeoutMs: 5000 }).catch(() => undefined)
 }
 
@@ -201,6 +211,33 @@ async function setup($: EngineInterface): Promise<string> {
   return `🦀 Done! Your crab is in your status line.${kept}\nUndo any time with /crab setup undo.${overrideNote}`
 }
 
+/**
+ * `/crab uninstall`: everything an uninstall leaves undone. The engine gives
+ * a plugin no word when it is uninstalled, so the frame would stay on the
+ * status line; this stops the crab, clears its frame and setup, removes
+ * ~/.claude/shelldon (the crabs themselves stay in $.store, for a reinstall),
+ * then asks Claude Code to uninstall the plugin.
+ */
+async function uninstall($: EngineInterface): Promise<string> {
+  const path = framePath
+  framePath = '' // stops the timer drawing it back
+  if (path !== '') await deleteFiles($, [path])
+  const undone = (await $.fs.exists(`${shelldonDir}/previous-statusline.json`))
+    ? `${await undoSetup($)}\n`
+    : ''
+  await deleteDir($, shelldonDir)
+  // A command cannot run another from its own hook (it would wait on itself),
+  // so the uninstall goes from a timer, once this command has answered.
+  $.clock.after(UNINSTALL_DELAY_MS, () => {
+    void $.command.run({ command: 'plugin', args: 'uninstall shelldon@shelldon' }).catch(() => undefined)
+  })
+  return [
+    `${undone}🦀 Your crab has left the status line. Uninstalling Shelldon...`,
+    'If it still shows in /plugin, finish with: /plugin uninstall shelldon@shelldon',
+    'Your crabs are kept, so they come back if you reinstall.',
+  ].join('\n')
+}
+
 /** `/crab setup undo`: puts back the status line setup replaced. */
 async function undoSetup($: EngineInterface): Promise<string> {
   const savedPath = `${shelldonDir}/previous-statusline.json`
@@ -243,8 +280,8 @@ export const register: Register = on => {
     if (crab === undefined) await save($, hatch(await $.clock.now()))
     await $.command.register({
       name: 'crab',
-      description: 'Check on your crab, put it in your status line, or hatch a new one',
-      argumentHint: '[setup | setup undo | hatch]',
+      description: 'Check on your crab, put it in your status line, hatch a new one, or uninstall',
+      argumentHint: '[setup | setup undo | hatch | uninstall]',
       immediate: true,
     })
     await draw($)
@@ -306,6 +343,10 @@ export const register: Register = on => {
     const args = e.args.trim().split(/\s+/).join(' ')
     if (args === 'setup') return { text: await setup($) }
     if (args === 'setup undo') return { text: await undoSetup($) }
+    if (args === 'uninstall') return { text: await uninstall($) }
+    if (args !== '' && args !== 'hatch') {
+      return { text: `Unknown: /crab ${args}\nTry /crab, /crab setup, /crab setup undo, /crab hatch or /crab uninstall.` }
+    }
 
     const now = await $.clock.now()
     await load($)
