@@ -105,8 +105,9 @@ export function dropShrimp(walk: Walk, cells: number, rand: () => number): Walk 
 }
 
 /**
- * One tick of the walk. With a shrimp down, the crab heads straight for it
- * and chews it for EAT_TICKS; otherwise it scuttles toward a random target,
+ * One tick of the walk. With a shrimp down, the crab heads straight for the
+ * cell beside it and chews it from there for EAT_TICKS, the 🍤 still showing
+ * until it is gone; otherwise it scuttles toward a random target,
  * rests a while on arrival, then picks a new spot anywhere on the beach.
  */
 export function wander(walk: Walk, cells: number, mood: Mood, rand: () => number): Walk {
@@ -117,14 +118,17 @@ export function wander(walk: Walk, cells: number, mood: Mood, rand: () => number
     rand() < chance ? pos + Math.sign(target - pos) : pos
 
   if (shrimp !== null) {
-    if (pos === shrimp) {
+    // The crab eats from the cell beside the shrimp, so both stay on screen.
+    if (Math.abs(pos - shrimp) === 1) {
       const eaten = walk.eaten + 1
       return eaten >= EAT_TICKS
         ? { pos, target: pos, restTicks: 4, shrimp: null, eaten: 0 }
         : { pos, target: pos, restTicks: 0, shrimp, eaten }
     }
+    const side = pos < shrimp ? shrimp - 1 : shrimp + 1
+    const beside = side >= 0 && side <= last ? side : shrimp + (shrimp - side)
     const chance = Math.max(STEP_CHANCE[mood], FOOD_STEP_CHANCE)
-    return { pos: step(shrimp, chance), target: shrimp, restTicks: 0, shrimp, eaten: 0 }
+    return { pos: step(beside, chance), target: beside, restTicks: 0, shrimp, eaten: 0 }
   }
 
   const target = Math.min(walk.target, last)

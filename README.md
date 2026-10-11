@@ -7,14 +7,14 @@ A 🦀 that lives in your Claude Code status line.
 ```
 
 - It wanders a beach beside a rolling ocean.
-- Every Claude turn feeds it the tokens it spent and drops a 🍤 on the beach; the crab walks over and eats it.
+- Every Claude turn feeds it the tokens it spent and drops a 🍤 on the beach; the crab walks up beside it and eats it.
 - Food runs out over 3 days. Leave a repo alone for 7 days and its crab starves 🪦.
 - One crab per repo, hatched the first time you open Claude Code there.
 
 ## Install
 
 ```
-/plugin install crab-pet --marketplace justinzau/shelldon
+/plugin install shelldon --marketplace justinzau/shelldon
 ```
 
 Answer `y` to add the marketplace, then pick a scope.
@@ -22,7 +22,7 @@ Answer `y` to add the marketplace, then pick a scope.
 ## Show it in your status line
 
 The plugin writes each frame, ANSI-colored, to
-`~/.claude/crab-pet/frames/<session_id>.txt`. Print it from your status line
+`~/.claude/shelldon/frames/<session_id>.txt`. Print it from your status line
 command, and have Claude Code re-run that command every second:
 
 ```json
@@ -43,7 +43,7 @@ the shell's own `read` (no `jq`, no `cat`).
 case $input in
   *'"session_id"'*)
     rest=${input#*'"session_id"'}; rest=${rest#*'"'}; session_id=${rest%%'"'*}
-    crab_frame="$HOME/.claude/crab-pet/frames/${session_id}.txt"
+    crab_frame="$HOME/.claude/shelldon/frames/${session_id}.txt"
     if [ -n "$session_id" ] && [ -s "$crab_frame" ]; then
       IFS= read -r crab < "$crab_frame" || [ -n "$crab" ]
       printf '%s\n' "$crab"

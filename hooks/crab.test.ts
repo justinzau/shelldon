@@ -104,25 +104,33 @@ test('a shrimp lands on the beach away from the crab, one at a time', () => {
   expect(row(hatch(T0), T0, down)).toContain('🍤')
 })
 
-test('the crab walks to the shrimp, stays to eat it, then it is gone', () => {
+test('the crab walks up beside the shrimp and eats it there, the shrimp showing until gone', () => {
   const rand = seeded(11)
   const crab = hatch(T0)
-  let walk: Walk = { ...START_WALK, pos: 2, target: 15, shrimp: 12 }
-  let ticks = 0
-  while (walk.pos !== 12) {
-    walk = wander(walk, 20, 'hungry', rand)
-    expect(walk.shrimp).toBe(12)
-    if (++ticks > 200) throw new Error('never reached the shrimp')
-  }
-  for (let i = 1; i < EAT_TICKS; i++) {
-    walk = wander(walk, 20, 'happy', rand)
-    expect(walk.pos).toBe(12)
-    expect(row(crab, T0, walk)).toContain('nom nom')
+  for (const [from, shrimp, beside] of [
+    [2, 12, 11],
+    [18, 12, 13],
+    [5, 0, 1],
+    [3, 19, 18],
+  ] as const) {
+    let walk: Walk = { ...START_WALK, pos: from, target: from, shrimp }
+    let ticks = 0
+    while (walk.eaten === 0) {
+      walk = wander(walk, 20, 'hungry', rand)
+      expect(walk.pos).not.toBe(shrimp)
+      if (++ticks > 300) throw new Error('never reached the shrimp')
+    }
+    expect(walk.pos).toBe(beside)
+    for (let i = 1; i < EAT_TICKS; i++) {
+      expect(row(crab, T0, walk)).toContain('🍤')
+      expect(row(crab, T0, walk)).toContain('nom nom')
+      walk = wander(walk, 20, 'happy', rand)
+      expect(walk.pos).toBe(beside)
+    }
+    expect(walk.shrimp).toBe(null)
     expect(row(crab, T0, walk)).not.toContain('🍤')
+    expect(row(crab, T0, walk)).not.toContain('nom nom')
   }
-  walk = wander(walk, 20, 'happy', rand)
-  expect(walk.shrimp).toBe(null)
-  expect(row(crab, T0, walk)).not.toContain('nom nom')
 })
 
 test('a happy crab wanders the whole beach and never leaves it', () => {
