@@ -51,26 +51,6 @@ async function save($: EngineInterface, next: Crab) {
   await $.store.set(key, next)
 }
 
-/**
- * The crab this repo had when the plugin was called crab-pet. $.store is kept
- * per plugin name, so the rename left it in crab-pet's store file; read it
- * from there once, when this store has no crab yet.
- */
-async function legacyCrab($: EngineInterface, home: string): Promise<Crab | undefined> {
-  const dir = `${home}/.claude/plugins/store`
-  if (!(await $.fs.exists(dir))) return undefined
-  for (const file of await $.fs.list(dir)) {
-    if (file.kind !== 'file' || !file.name.startsWith('crab-pet_')) continue
-    try {
-      const data = JSON.parse(await $.fs.read(`${dir}/${file.name}`)) as Record<string, unknown>
-      if (data[key] !== undefined) return data[key] as Crab
-    } catch {
-      // Unreadable or not JSON: no crab to bring over from this one.
-    }
-  }
-  return undefined
-}
-
 /** Deletes files; $.fs cannot, so the host's own delete command does. */
 async function deleteFiles($: EngineInterface, paths: readonly string[]) {
   if (paths.length === 0) return
@@ -137,9 +117,7 @@ export const register: Register = on => {
     framePath = `${framesDir}/${await $.session.id()}.txt`
     await sweepFrames($)
     await load($)
-    if (crab === undefined) {
-      await save($, (await legacyCrab($, home)) ?? hatch(await $.clock.now()))
-    }
+    if (crab === undefined) await save($, hatch(await $.clock.now()))
     await $.command.register({
       name: 'crab',
       description: 'Check on your crab, or hatch a new one',
