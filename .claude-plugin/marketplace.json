@@ -1,6 +1,6 @@
 {
   "name": "shelldon",
   "owner": { "name": "Justin Zau" },
-  "description": "Pets that live in your Claude Code terminal",
+  "description": "A crab that lives in your Claude Code terminal",
   "plugins": [{ "name": "shelldon", "source": "./" }]
 }
